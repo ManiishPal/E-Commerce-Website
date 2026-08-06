@@ -1,4 +1,4 @@
-import { createContext, useEffect, useState } from "react";
+import { createContext, useCallback, useEffect, useRef, useState } from "react";
 // import { products } from "../assets/assets";
 import { toast } from "react-toastify";
 import { useNavigate } from "react-router-dom";
@@ -18,6 +18,35 @@ const ShopContextProvider = (props) => {
     const [products, setProducts] = useState([]);
     const [token, setToken] = useState('');
     const navigate = useNavigate();
+    const recentInteractionKeys = useRef(new Map());
+    const [recommendationSessionId] = useState(() => {
+        const storageKey = 'recommendationSessionId';
+        const existingId = localStorage.getItem(storageKey);
+        if (existingId) return existingId;
+        const newId = crypto.randomUUID();
+        localStorage.setItem(storageKey, newId);
+        return newId;
+    });
+    const getInteractionHeaders = useCallback(() => ({
+        'x-session-id': recommendationSessionId,
+        ...(token ? { token } : {}),
+    }), [recommendationSessionId, token]);
+    const trackInteraction = useCallback((interaction) => {
+        const key = interaction.type + ':' + (interaction.productId || interaction.sourceProductId || interaction.query || '');
+        const cooldown = interaction.type === 'view' ? 30 * 60 * 1000 : 60 * 1000;
+        const lastTrackedAt = recentInteractionKeys.current.get(key);
+        if (lastTrackedAt && Date.now() - lastTrackedAt < cooldown) return;
+        recentInteractionKeys.current.set(key, Date.now());
+        axios.post(backendUrl + '/api/interactions', interaction, { headers: getInteractionHeaders() })
+            .catch((error) => console.warn('Could not record recommendation interaction', error));
+    }, [backendUrl, getInteractionHeaders]);
+    const getRecommendations = useCallback(async (excludeProductId) => {
+        const response = await axios.get(backendUrl + '/api/interactions/recommendations', {
+            params: { limit: 5, ...(excludeProductId ? { excludeProductId } : {}) },
+            headers: getInteractionHeaders(),
+        });
+        return response.data.success ? response.data.products : [];
+    }, [backendUrl, getInteractionHeaders]);
 
     const addToCart = async(itemId, size) => {
         let cartData = structuredClone(cartItems);
@@ -38,6 +67,7 @@ const ShopContextProvider = (props) => {
             cartData[itemId][size] = 1;
         }
         setCartItems(cartData);
+        trackInteraction({ type: 'cart', productId: itemId });
 
         if(token) {
             try {
@@ -143,7 +173,8 @@ const ShopContextProvider = (props) => {
         search, setSearch, showSearch, setShowSearch,
         cartItems, addToCart, getCartCount, updateQuantity,
         getCartAmount, navigate, 
-        backendUrl, setToken, token, setCartItems
+        backendUrl, setToken, token, setCartItems,
+        trackInteraction, getRecommendations
     } 
 
     

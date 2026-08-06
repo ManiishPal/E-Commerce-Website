@@ -6,10 +6,14 @@
   "author": "",
   "type": "module",
   "main": "server.js",
-  
   "scripts": {
     "start": "node server.js",
-    "server": "nodemon server.js"
+    "server": "nodemon server.js",
+    "export:interactions": "node ml/exportInteractions.js",
+    "train:recommender": "node ml/trainRecommender.js",
+    "train:recommendations": "npm run export:interactions && npm run train:recommender",
+    "generate:demo-interactions": "node ml/generateDemoInteractions.js",
+    "train:demo-recommendations": "npm run export:interactions && npm run generate:demo-interactions && npm run train:recommender"
   },
   "dependencies": {
     "bcrypt": "^6.0.0",
